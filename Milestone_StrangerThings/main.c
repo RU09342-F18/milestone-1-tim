@@ -1,93 +1,113 @@
-/* --COPYRIGHT--,BSD_EX
- * Copyright (c) 2012, Texas Instruments Incorporated
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * *  Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *
- * *  Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * *  Neither the name of Texas Instruments Incorporated nor the names of
- *    its contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
- * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
- * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- *******************************************************************************
- * 
- *                       MSP430 CODE EXAMPLE DISCLAIMER
- *
- * MSP430 code examples are self-contained low-level programs that typically
- * demonstrate a single peripheral function or device feature in a highly
- * concise manner. For this the code may rely on the device's power-on default
- * register values and settings such as the clock configuration and care must
- * be taken when combining code from several examples to avoid potential side
- * effects. Also see www.ti.com/grace for a GUI- and www.ti.com/msp430ware
- * for an API functional library-approach to peripheral configuration.
- *
- * --/COPYRIGHT--*/
-//******************************************************************************
-//   MSP430G2xx3 Demo - USCI_A0, 9600 UART Echo ISR, DCO SMCLK
-//
-//   Description: Echo a received character, RX ISR used. Normal mode is LPM0.
-//   USCI_A0 RX interrupt triggers TX Echo.
-//   Baud rate divider with 1MHz = 1MHz/9600 = ~104.2
-//   ACLK = n/a, MCLK = SMCLK = CALxxx_1MHZ = 1MHz
-//
-//                MSP430G2xx3
-//             -----------------
-//         /|\|              XIN|-
-//          | |                 |
-//          --|RST          XOUT|-
-//            |                 |
-//            |     P1.2/UCA0TXD|------------>
-//            |                 | 9600 - 8N1
-//            |     P1.1/UCA0RXD|<------------
-//
-//   D. Dang
-//   Texas Instruments Inc.
-//   February 2011
-//   Built with CCS Version 4.2.0 and IAR Embedded Workbench Version: 5.10
-//******************************************************************************
 #include <msp430.h>
 
-int main(void)
-{
-  WDTCTL = WDTPW + WDTHOLD;                 // Stop WDT
-  if (CALBC1_1MHZ==0xFF)					// If calibration constant erased
-  {											
-    while(1);                               // do not load, trap CPU!!	
-  }
-  DCOCTL = 0;                               // Select lowest DCOx and MODx settings
-  BCSCTL1 = CALBC1_1MHZ;                    // Set DCO
-  DCOCTL = CALDCO_1MHZ;
-  P1SEL = BIT1 + BIT2 ;                     // P1.1 = RXD, P1.2=TXD
-  P1SEL2 = BIT1 + BIT2 ;                    // P1.1 = RXD, P1.2=TXD
-  UCA0CTL1 |= UCSSEL_2;                     // SMCLK
-  UCA0BR0 = 104;                            // 1MHz 9600
-  UCA0BR1 = 0;                              // 1MHz 9600
-  UCA0MCTL = UCBRS0;                        // Modulation UCBRSx = 1
-  UCA0CTL1 &= ~UCSWRST;                     // **Initialize USCI state machine**
-  IE2 |= UCA0RXIE;                          // Enable USCI_A0 RX interrupt
+#define RED_PIN BIT2
+#define GREEN_PIN BIT1
+#define BLUE_PIN BIT0
 
-  __bis_SR_register(LPM0_bits + GIE);       // Enter LPM0, interrupts enabled
+void setup_watchdog() {
+    WDTCTL = WDTPW + WDTHOLD;                 // Stop WDT
 }
+
+void setup_clock() {
+    // config ACLK to use external 8MHz resonator
+    BCSCTL1 |= XTS; // Set to high frequency mode
+    BCSCTL3 |= LFXT1S_2; // 3-16MHz range of external clock
+}
+
+void setup_uart() {
+    DCOCTL = 0;                               // Select lowest DCOx and MODx settings
+    BCSCTL1 = CALBC1_1MHZ;                    // Set DCO
+    DCOCTL = CALDCO_1MHZ;
+    P1SEL = BIT1 + BIT2 ;                     // P1.1 = RXD, P1.2=TXD
+    P1SEL2 = BIT1 + BIT2 ;                    // P1.1 = RXD, P1.2=TXD
+    UCA0CTL1 |= UCSSEL_2;                     // SMCLK
+    UCA0BR0 = 104;                            // 1MHz 9600
+    UCA0BR1 = 0;                              // 1MHz 9600
+    UCA0MCTL = UCBRS0;                        // Modulation UCBRSx = 1
+    UCA0CTL1 &= ~UCSWRST;                     // **Initialize USCI state machine**
+    IE2 |= UCA0RXIE;                          // Enable USCI_A0 RX interrupt
+}
+
+void setup_leds() {
+    P2DIR |= RED_PIN;
+    P2DIR |= GREEN_PIN;
+    P2DIR |= BLUE_PIN;
+
+    //P2SEL |= RED_PIN;
+    //P2SEL |= GREEN_PIN;
+    //P2SEL |= BLUE_PIN;
+}
+
+void setup_timer() {
+    // sets up timer 0 for pwm
+
+    // Select clock source to ACLK
+    TA0CTL |= TASSEL_1;
+
+    // Set to up mode
+    TA0CTL |= MC_2;
+
+    // Set capture/compare 1 to 128
+    TA0CCR0 = 256UL*128UL; // red
+    TA0CCR1 = 256UL*128UL; // blue
+    TA0CCR2 = 256UL*128UL; // green
+
+    // Enable waveform generation
+    // Sets output high at CCRx, we reset to low in overflow interrupt
+    //TA0CCTL0 |= OUTMOD_1;
+    //TA0CCTL1 |= OUTMOD_1;
+    //TA0CCTL2 |= OUTMOD_1;
+
+    // Enable CCR0 and CCR1 interrupt
+    TA0CCTL0 |= CCIE;
+    TA0CCTL1 |= CCIE;
+    TA0CCTL2 |= CCIE;
+
+    // Enable Timer A0 interrupts
+    TA0CTL |= TAIE;
+}
+
+int main(void) {
+    setup_watchdog();
+    setup_uart();
+    setup_leds();
+    setup_timer();
+
+    __bis_SR_register(GIE);
+
+    while(1) __no_operation();
+}
+
+// Timer A0 interrupt
+// CCR0 only
+void __attribute__((interrupt(TIMER0_A0_VECTOR))) Timer0_A0 (void) {
+    TA1CTL &= ~TAIFG;
+    P2OUT |= RED_PIN;
+
+}
+
+// the rest of the interrupts
+void __attribute__((interrupt(TIMER0_A1_VECTOR))) Timer0_A1 (void) {
+    int interrupts = TA0IV;
+
+    // need to touch T0IV to reset interrupt flag
+    switch (interrupts) {
+        case 2: // CCR1
+            P2OUT |= GREEN_PIN;
+            break;
+        case 4: // CCR2
+            P2OUT |= BLUE_PIN;
+            break;
+        case 10: // Overflow
+            P2OUT &= ~RED_PIN;
+            P2OUT &= ~GREEN_PIN;
+            P2OUT &= ~BLUE_PIN;
+            break;
+    }
+}
+
+volatile int byte = 0;
+volatile int len = 0;
 
 //  Echo back RXed character, confirm TX buffer is ready first
 #if defined(__TI_COMPILER_VERSION__) || defined(__IAR_SYSTEMS_ICC__)
@@ -99,6 +119,34 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
 #error Compiler not supported!
 #endif
 {
-  while (!(IFG2&UCA0TXIFG));                // USCI_A0 TX buffer ready?
-  UCA0TXBUF = UCA0RXBUF;                    // TX -> RXed character
+    while (!(IFG2&UCA0TXIFG));                // USCI_A0 TX buffer ready?
+
+    char in = UCA0RXBUF;
+
+    switch (byte) {
+        case 0:
+            len = in;
+            break;
+        case 1:
+            TA0CCR0 = 256*in;
+            break;
+        case 2:
+            TA0CCR1 = 256*in;
+            break;
+        case 3:
+            TA0CCR2 = 256*in;
+            UCA0TXBUF = len-3;
+            break;
+        default:
+                UCA0TXBUF = UCA0RXBUF;
+            break;
+    }
+
+    if (byte < len) {
+        byte += 1;
+    } else {
+        byte = 0;
+    }
+
+    //UCA0TXBUF = UCA0RXBUF;                    // TX -> RXed character
 }
