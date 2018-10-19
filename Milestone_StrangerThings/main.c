@@ -1,17 +1,11 @@
 #include <msp430.h>
 
-#define RED_PIN BIT2
-#define GREEN_PIN BIT1
-#define BLUE_PIN BIT0
+#define RED_PIN BIT1   // P2.1
+#define GREEN_PIN BIT4 // P2.4
+#define BLUE_PIN BIT6  // P1.6
 
 void setup_watchdog() {
     WDTCTL = WDTPW + WDTHOLD;                 // Stop WDT
-}
-
-void setup_clock() {
-    // config ACLK to use external 8MHz resonator
-    BCSCTL1 |= XTS; // Set to high frequency mode
-    BCSCTL3 |= LFXT1S_2; // 3-16MHz range of external clock
 }
 
 void setup_uart() {
@@ -31,53 +25,60 @@ void setup_uart() {
 void setup_leds() {
     P2DIR |= RED_PIN;
     P2DIR |= GREEN_PIN;
-    P2DIR |= BLUE_PIN;
+    P1DIR |= BLUE_PIN;
 
-    //P2SEL |= RED_PIN;
-    //P2SEL |= GREEN_PIN;
-    //P2SEL |= BLUE_PIN;
+    P2SEL |= RED_PIN;
+    P2SEL |= GREEN_PIN;
+    P1SEL |= BLUE_PIN;
 }
 
-void setup_timer() {
-    // sets up timer 0 for pwm
+void setup_timer_0() {
+    // sets up timer 0 for pwm for 2 of the leds red, green
 
-    // Select clock source to ACLK
-    TA0CTL |= TASSEL_1;
+    // Select clock source to SMCLK
+    TA0CTL |= TASSEL_2;
 
     // Set to up mode
-    TA0CTL |= MC_2;
+    TA0CTL |= MC_1;
 
     // Set capture/compare 1 to 128
-    TA0CCR0 = 256UL*128UL; // red
-    TA0CCR1 = 256UL*128UL; // blue
-    TA0CCR2 = 256UL*128UL; // green
+    TA0CCR0 = 256;
+    TA0CCR1 = 1; // blue
 
     // Enable waveform generation
     // Sets output high at CCRx, we reset to low in overflow interrupt
-    //TA0CCTL0 |= OUTMOD_1;
-    //TA0CCTL1 |= OUTMOD_1;
-    //TA0CCTL2 |= OUTMOD_1;
+    TA0CCTL1 |= OUTMOD_7;
+}
 
-    // Enable CCR0 and CCR1 interrupt
-    TA0CCTL0 |= CCIE;
-    TA0CCTL1 |= CCIE;
-    TA0CCTL2 |= CCIE;
+void setup_timer_1() {
+    // sets up timer 1 for pwm for blue
 
-    // Enable Timer A0 interrupts
-    TA0CTL |= TAIE;
+    TA1CTL |= TASSEL_2;
+
+    TA1CTL |= MC_1;
+
+    TA1CCR0 = 255;
+    TA1CCR1 = 1; // red
+    TA1CCR2 = 1; // green
+
+    TA1CCTL1 |= OUTMOD_7;
+    TA1CCTL2 |= OUTMOD_7;
 }
 
 int main(void) {
     setup_watchdog();
     setup_uart();
     setup_leds();
-    setup_timer();
+    setup_timer_0();
+    setup_timer_1();
+
 
     __bis_SR_register(GIE);
 
     while(1) __no_operation();
 }
 
+/*
 // Timer A0 interrupt
 // CCR0 only
 void __attribute__((interrupt(TIMER0_A0_VECTOR))) Timer0_A0 (void) {
@@ -105,6 +106,7 @@ void __attribute__((interrupt(TIMER0_A1_VECTOR))) Timer0_A1 (void) {
             break;
     }
 }
+*/
 
 volatile int byte = 0;
 volatile int len = 0;
@@ -128,13 +130,13 @@ void __attribute__ ((interrupt(USCIAB0RX_VECTOR))) USCI0RX_ISR (void)
             len = in;
             break;
         case 1:
-            TA0CCR0 = 256*in;
+            TA1CCR1 = in;
             break;
         case 2:
-            TA0CCR1 = 256*in;
+            TA1CCR2 = in;
             break;
         case 3:
-            TA0CCR2 = 256*in;
+            TA0CCR1 = in;
             UCA0TXBUF = len-3;
             break;
         default:
